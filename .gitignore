@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.idea/
+.vscode/
+
+# Go
+server/bin/
+server/coverage.out
+
+# Vue / Node
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.tsbuildinfo
+
+# Local data
+data/
