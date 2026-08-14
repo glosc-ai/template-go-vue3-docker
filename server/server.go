@@ -14,6 +14,7 @@ import (
 	"github.com/gloscai/template-go-vue3-docker/server/database"
 	"github.com/gloscai/template-go-vue3-docker/server/health"
 	"github.com/gloscai/template-go-vue3-docker/server/tasks"
+	"github.com/gloscai/template-go-vue3-docker/server/webassets"
 )
 
 func run(ctx context.Context) error {
@@ -44,6 +45,12 @@ func run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	health.New(db, redisClient).Register(mux)
 	tasks.NewHandler(tasks.NewSQLStore(db, cfg.Database.Driver)).Register(mux)
+
+	frontend, err := webassets.Handler()
+	if err != nil {
+		return fmt.Errorf("loading embedded frontend: %w", err)
+	}
+	mux.Handle("/", frontend)
 
 	handler := withRecovery(logger,
 		withCORS(cfg.CORSOrigins,

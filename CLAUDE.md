@@ -14,7 +14,7 @@ make web     # 宿主机跑 Vite dev server（需另开终端）
 make test    # server: go test -race ./... ；web: npm run build（vue-tsc + vite build）
 make check   # server: go vet ./... ；web: npm run typecheck
 make fmt     # gofmt -w .
-make up/down # 生产形态容器（Nginx 静态资源 + 反代，web :3000）
+make up/down # 生产形态容器（单一 api 镜像，前端已内嵌，:8080）
 ```
 
 - 单跑一个 Go 测试：`cd server && go test -race ./tasks/ -run TestName -v`
@@ -26,7 +26,7 @@ make up/down # 生产形态容器（Nginx 静态资源 + 反代，web :3000）
 
 ### 请求链路
 
-浏览器始终使用相对 URL。开发时 Vite 把 `/api`、`/health` 代理到 Go（`web/vite.config.ts` 的 `VITE_API_PROXY_TARGET`），生产由 Nginx 反代到 `api:8080`。因此后端主机名不出现在前端代码和公开镜像中；`VITE_API_BASE_URL`（默认 `/api/v1`）是 web Dockerfile 的构建参数。
+浏览器始终使用相对 URL。开发时 Vite 把 `/api`、`/health` 代理到 Go（`web/vite.config.ts` 的 `VITE_API_PROXY_TARGET`）。生产不起 Nginx：`server/Dockerfile` 的 `production` target 先用 Node 阶段构建 `web/`，再把 `web/dist` 复制进 `server/webassets/dist` 用 `go:embed` 打进二进制，由 Go 自己在同一进程内直接提供静态资源并处理 SPA 路由回退（未匹配 `/api/`、`/health/` 的路径回退到 `index.html`）。因此生产只有一个 `api` 镜像/容器；`VITE_API_BASE_URL`（默认 `/api/v1`）作为 `server/Dockerfile` 的构建参数传给内部的前端构建阶段。
 
 ### 后端（`server/`，module `github.com/gloscai/template-go-vue3-docker/server`）
 

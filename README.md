@@ -10,9 +10,9 @@
 - JWT HS256 签发与验证基础模块
 - Vue 3、TypeScript、Vite、Vue Router、Pinia
 - shadcn-vue `nova` 风格、Tailwind CSS v4、响应式示例页面
-- 开发与生产多阶段 Docker 镜像
+- 开发多阶段 Docker 镜像；生产阶段将前端构建产物内嵌进 API 二进制，单一镜像部署
 - Docker Compose 一键开发、数据卷持久化
-- GitHub Actions 测试，以及 Release 发布 API / Web 镜像到 GHCR
+- GitHub Actions 测试，以及 Release 发布单一镜像到 GHCR
 
 ## 立即开始
 
@@ -52,7 +52,7 @@ cp .env.example .env
 make up
 ```
 
-访问 <http://localhost:3000>。生产 Web 容器由 Nginx 提供静态资源，并将 `/api` 与 `/health` 反向代理到 Go API。
+访问 <http://localhost:8080>。生产镜像只有 `api` 一个容器：Go 二进制内嵌前端静态资源，直接提供页面并处理 `/api`、`/health` 请求，未匹配路径回退到 `index.html`（SPA 路由）。
 
 停止容器：
 
@@ -77,7 +77,8 @@ make down
 │   │       └── mysql/
 │   ├── health/                 # live / ready 探针
 │   ├── tasks/                  # 示例业务：模型、存储、HTTP、测试
-│   └── Dockerfile
+│   ├── webassets/               # 生产构建时内嵌 web/dist 的前端资源（go:embed）
+│   └── Dockerfile               # development 阶段仅供 make dev 用；production 阶段先构建 web 再嵌入
 ├── web/
 │   ├── src/
 │   │   ├── api/                # 类型化 HTTP 客户端
@@ -86,8 +87,7 @@ make down
 │   │   ├── router/             # Vue Router
 │   │   └── views/              # 页面入口
 │   ├── components.json         # shadcn-vue 项目配置
-│   ├── nginx.conf
-│   └── Dockerfile
+│   └── Dockerfile               # 仅 development 阶段（Vite 热更新），生产由 server/Dockerfile 构建
 ├── docs/architecture.md
 ├── docker-compose.yml          # 生产形态
 ├── docker-compose.dev.yml      # 开发形态
@@ -151,11 +151,10 @@ npx shadcn-vue@latest add dialog
 
 ## 发布镜像
 
-在 GitHub 创建 Release 后，`release.yml` 会构建 `linux/amd64` 与 `linux/arm64` 镜像并发布：
+在 GitHub 创建 Release 后，`release.yml` 会构建 `linux/amd64` 与 `linux/arm64` 的单一镜像并发布：
 
 ```text
-ghcr.io/<owner>/<repo>-api:<version>
-ghcr.io/<owner>/<repo>-web:<version>
+ghcr.io/<owner>/<repo>:<version>
 ```
 
 仓库的 Actions 需要保持 `packages: write` 权限。发布到 GHCR 与部署到具体服务器是两个独立步骤；服务器部署可在此工作流后追加 SSH、Kubernetes、Nomad 或云平台步骤。
