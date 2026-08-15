@@ -168,3 +168,7 @@ ghcr.io/<owner>/<repo>:<version>
 5. 首次公开部署前更换所有密码与 `JWT_SECRET`。
 
 更多设计取舍见 [docs/architecture.md](docs/architecture.md)。
+
+
+## 社区
+- https://linux.do/
