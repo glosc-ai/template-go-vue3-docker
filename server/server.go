@@ -9,10 +9,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/gloscai/template-go-vue3-docker/server/auth"
 	"github.com/gloscai/template-go-vue3-docker/server/cache"
 	"github.com/gloscai/template-go-vue3-docker/server/config"
 	"github.com/gloscai/template-go-vue3-docker/server/database"
 	"github.com/gloscai/template-go-vue3-docker/server/health"
+	"github.com/gloscai/template-go-vue3-docker/server/sso"
 	"github.com/gloscai/template-go-vue3-docker/server/tasks"
 	"github.com/gloscai/template-go-vue3-docker/server/webassets"
 )
@@ -45,6 +47,33 @@ func run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	health.New(db, redisClient).Register(mux)
 	tasks.NewHandler(tasks.NewSQLStore(db, cfg.Database.Driver)).Register(mux)
+
+	if cfg.SSO.Enabled {
+		sessions, err := auth.NewManager(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.TTL)
+		if err != nil {
+			return fmt.Errorf("building session manager: %w", err)
+		}
+		sso.NewHandler(sso.Options{
+			Provider: sso.NewProvider(
+				cfg.SSO.DiscoveryURL,
+				cfg.SSO.ClientID,
+				cfg.SSO.ClientSecret,
+				cfg.SSO.RedirectURL,
+				cfg.SSO.Scopes,
+			),
+			State:           sso.NewStateStore(redisClient),
+			Store:           sso.NewSQLStore(db, cfg.Database.Driver),
+			Sessions:        sessions,
+			Logger:          logger,
+			SessionTTL:      cfg.JWT.TTL,
+			SecureCookies:   cfg.SSO.SecureCookies,
+			DefaultRedirect: cfg.SSO.PostLoginPath,
+		}).Register(mux)
+		logger.Info("SSO login enabled", "discovery", cfg.SSO.DiscoveryURL, "redirect", cfg.SSO.RedirectURL)
+	} else {
+		logger.Info("SSO login disabled; set SSO_CLIENT_ID to enable it")
+		sso.RegisterDisabled(mux)
+	}
 
 	frontend, err := webassets.Handler()
 	if err != nil {

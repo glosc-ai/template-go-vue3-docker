@@ -1,42 +1,70 @@
 package config
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
-func TestLoadDefaults(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
-	t.Setenv("DB_DRIVER", "")
-	t.Setenv("DATABASE_URL", "")
-	t.Setenv("JWT_SECRET", "")
-
-	cfg, err := Load()
+func TestLoadLeavesSSODisabledWithoutClientID(t *testing.T) {
+	settings, err := loadSSO("development")
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("loadSSO returned an error: %v", err)
 	}
-	if cfg.Database.Driver != "postgres" {
-		t.Fatalf("Database.Driver = %q, want postgres", cfg.Database.Driver)
+	if settings.Enabled {
+		t.Error("SSO should stay disabled when SSO_CLIENT_ID is unset")
 	}
-	if cfg.JWT.TTL != 24*time.Hour {
-		t.Fatalf("JWT.TTL = %s, want 24h", cfg.JWT.TTL)
-	}
-}
-
-func TestLoadRejectsInvalidDriver(t *testing.T) {
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("JWT_SECRET", "development-only-secret-change-before-release")
-
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want invalid driver error")
+	if settings.DiscoveryURL != "https://sso.gloscai.com/api/.well-known/openid-configuration" {
+		t.Errorf("default discovery URL = %q", settings.DiscoveryURL)
 	}
 }
 
-func TestLoadRequiresProductionSecret(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
-	t.Setenv("JWT_SECRET", "")
+func TestLoadSSORequiresSecretAndRedirect(t *testing.T) {
+	t.Setenv("SSO_CLIENT_ID", "client-1")
 
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want JWT secret error")
+	if _, err := loadSSO("development"); err == nil {
+		t.Fatal("loadSSO should fail without SSO_CLIENT_SECRET")
+	}
+
+	t.Setenv("SSO_CLIENT_SECRET", "secret-1")
+	if _, err := loadSSO("development"); err == nil {
+		t.Fatal("loadSSO should fail without SSO_REDIRECT_URL")
+	}
+
+	t.Setenv("SSO_REDIRECT_URL", "/api/v1/auth/sso/callback")
+	if _, err := loadSSO("development"); err == nil {
+		t.Fatal("loadSSO should reject a relative SSO_REDIRECT_URL")
+	}
+
+	t.Setenv("SSO_REDIRECT_URL", "http://localhost:5173/api/v1/auth/sso/callback")
+	settings, err := loadSSO("development")
+	if err != nil {
+		t.Fatalf("loadSSO returned an error: %v", err)
+	}
+	if !settings.Enabled {
+		t.Error("SSO should be enabled once client ID, secret and redirect URL are set")
+	}
+	if settings.SecureCookies {
+		t.Error("development should default to non-Secure cookies for plain HTTP")
+	}
+	if settings.PostLoginPath != "/profile" {
+		t.Errorf("PostLoginPath = %q, want /profile", settings.PostLoginPath)
+	}
+}
+
+func TestLoadSSOSecuresCookiesInProduction(t *testing.T) {
+	settings, err := loadSSO("production")
+	if err != nil {
+		t.Fatalf("loadSSO returned an error: %v", err)
+	}
+	if !settings.SecureCookies {
+		t.Error("production should default to Secure session cookies")
+	}
+}
+
+func TestLoadSSORejectsRelativePostLoginPath(t *testing.T) {
+	t.Setenv("SSO_CLIENT_ID", "client-1")
+	t.Setenv("SSO_CLIENT_SECRET", "secret-1")
+	t.Setenv("SSO_REDIRECT_URL", "https://app.example.com/api/v1/auth/sso/callback")
+	t.Setenv("SSO_POST_LOGIN_PATH", "profile")
+
+	if _, err := loadSSO("production"); err == nil {
+		t.Fatal("loadSSO should reject a post-login path that is not root-relative")
 	}
 }

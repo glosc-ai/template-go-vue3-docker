@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { AlertCircleIcon, ListChecksIcon, PlusIcon, Trash2Icon } from '@lucide/vue'
-import { toast } from 'vue-sonner'
 import type { Task } from '@/api/tasks'
 import { useTaskStore } from './store'
+import { confirmAction, notifyError, notifySuccess } from '@/lib/message'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,7 +39,7 @@ const validationError = computed(() => title.value.length > 160 ? '任务标题�
 async function submit() {
   const trimmed = title.value.trim()
   if (!trimmed) {
-    toast.error('请输入任务标题')
+    notifyError('请输入任务标题')
     return
   }
   if (validationError.value) {
@@ -48,10 +48,10 @@ async function submit() {
   try {
     await store.add(trimmed)
     title.value = ''
-    toast.success('任务已创建')
+    notifySuccess('任务已创建')
   }
   catch {
-    toast.error('创建失败，请确认 API 与数据库已启动')
+    notifyError('创建失败，请确认 API 与数据库已启动')
   }
 }
 
@@ -60,17 +60,25 @@ async function toggle(task: Task, completed: boolean) {
     await store.toggle(task, completed)
   }
   catch {
-    toast.error('更新任务失败')
+    notifyError('更新任务失败')
   }
 }
 
 async function remove(task: Task) {
+  const confirmed = await confirmAction(
+    `确定删除任务“${task.title}”吗？此操作无法撤销。`,
+    '删除任务',
+    { confirmText: '删除', danger: true },
+  )
+  if (!confirmed) {
+    return
+  }
   try {
     await store.remove(task)
-    toast.success('任务已删除')
+    notifySuccess('任务已删除')
   }
   catch {
-    toast.error('删除任务失败')
+    notifyError('删除任务失败')
   }
 }
 

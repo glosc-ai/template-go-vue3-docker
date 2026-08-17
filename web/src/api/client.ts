@@ -1,4 +1,4 @@
-const apiBaseURL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
+export const apiBaseURL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 
 interface ErrorPayload {
   error?: {
@@ -26,7 +26,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${apiBaseURL}${path}`, { ...init, headers })
+  // The session lives in an HttpOnly cookie, so credentials must ride along
+  // even when the API is served from another origin.
+  const response = await fetch(`${apiBaseURL}${path}`, {
+    credentials: 'include',
+    ...init,
+    headers,
+  })
   if (response.status === 204) {
     return undefined as T
   }

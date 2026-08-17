@@ -50,6 +50,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace-this-development-secret-before-production}
       JWT_ISSUER: ${JWT_ISSUER:-go-vue-starter}
       JWT_TTL: ${JWT_TTL:-24h}
+      SSO_CLIENT_ID: ${SSO_CLIENT_ID:-}
+      SSO_CLIENT_SECRET: ${SSO_CLIENT_SECRET:-}
+      SSO_REDIRECT_URL: ${SSO_REDIRECT_URL:-}
+      SSO_ISSUER: ${SSO_ISSUER:-https://sso.gloscai.com}
+      SSO_SCOPES: ${SSO_SCOPES:-user:read}
+      SSO_POST_LOGIN_PATH: ${SSO_POST_LOGIN_PATH:-/profile}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
     depends_on:
       postgres:
         condition: service_healthy

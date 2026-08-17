@@ -3,6 +3,7 @@ package config
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ type Config struct {
 	Database    Database
 	Redis       Redis
 	JWT         JWT
+	SSO         SSO
 }
 
 type Database struct {
@@ -38,6 +40,22 @@ type JWT struct {
 	Secret string
 	Issuer string
 	TTL    time.Duration
+}
+
+// SSO configures the OAuth 2.0 / OIDC relying party. Enabled is false when no
+// client ID is set, which keeps the template runnable without SSO credentials.
+type SSO struct {
+	Enabled      bool
+	DiscoveryURL string
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	Scopes       []string
+	// PostLoginPath is where the callback sends the browser by default.
+	PostLoginPath string
+	// SecureCookies marks the session cookie Secure; keep it off for plain
+	// HTTP local development.
+	SecureCookies bool
 }
 
 func Load() (Config, error) {
@@ -88,6 +106,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("database connection limits must be non-negative and DB_MAX_OPEN_CONNS must be positive")
 	}
 
+	sso, err := loadSSO(environment)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Environment: environment,
 		HTTPAddr:    cmp.Or(os.Getenv("HTTP_ADDR"), ":8080"),
@@ -111,7 +134,57 @@ func Load() (Config, error) {
 			Issuer: cmp.Or(os.Getenv("JWT_ISSUER"), "go-vue-starter"),
 			TTL:    jwtTTL,
 		},
+		SSO: sso,
 	}, nil
+}
+
+// loadSSO reads the relying-party settings. SSO stays disabled until
+// SSO_CLIENT_ID is provided; once it is, the secret and redirect URL become
+// mandatory so a half-configured deployment fails at startup instead of at the
+// first login attempt.
+func loadSSO(environment string) (SSO, error) {
+	clientID := strings.TrimSpace(os.Getenv("SSO_CLIENT_ID"))
+	issuer := strings.TrimRight(cmp.Or(os.Getenv("SSO_ISSUER"), "https://sso.gloscai.com"), "/")
+
+	secureCookies, err := envBool("SESSION_COOKIE_SECURE", environment == "production")
+	if err != nil {
+		return SSO{}, err
+	}
+
+	settings := SSO{
+		Enabled:       clientID != "",
+		DiscoveryURL:  cmp.Or(os.Getenv("SSO_DISCOVERY_URL"), issuer+"/api/.well-known/openid-configuration"),
+		ClientID:      clientID,
+		ClientSecret:  os.Getenv("SSO_CLIENT_SECRET"),
+		RedirectURL:   strings.TrimSpace(os.Getenv("SSO_REDIRECT_URL")),
+		Scopes:        splitList(cmp.Or(os.Getenv("SSO_SCOPES"), "user:read")),
+		PostLoginPath: cmp.Or(os.Getenv("SSO_POST_LOGIN_PATH"), "/profile"),
+		SecureCookies: secureCookies,
+	}
+
+	if !settings.Enabled {
+		return settings, nil
+	}
+	if settings.ClientSecret == "" {
+		return SSO{}, fmt.Errorf("SSO_CLIENT_SECRET is required when SSO_CLIENT_ID is set")
+	}
+	if settings.RedirectURL == "" {
+		return SSO{}, fmt.Errorf("SSO_REDIRECT_URL is required when SSO_CLIENT_ID is set")
+	}
+	redirect, err := url.Parse(settings.RedirectURL)
+	if err != nil {
+		return SSO{}, fmt.Errorf("parsing SSO_REDIRECT_URL: %w", err)
+	}
+	if redirect.Scheme != "http" && redirect.Scheme != "https" {
+		return SSO{}, fmt.Errorf("SSO_REDIRECT_URL must be an absolute http(s) URL matching the client whitelist")
+	}
+	if len(settings.Scopes) == 0 {
+		return SSO{}, fmt.Errorf("SSO_SCOPES must contain at least one scope")
+	}
+	if !strings.HasPrefix(settings.PostLoginPath, "/") {
+		return SSO{}, fmt.Errorf("SSO_POST_LOGIN_PATH must be a root-relative path")
+	}
+	return settings, nil
 }
 
 func defaultDatabaseURL(driver string) string {

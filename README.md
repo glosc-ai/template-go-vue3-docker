@@ -8,6 +8,8 @@
 - PostgreSQL / MySQL 双驱动、内嵌 SQL 迁移和连接池配置
 - Redis 连接与存活、就绪探针
 - JWT HS256 签发与验证基础模块
+- Glosc AI 单点登录（OAuth 2.0 授权码 + PKCE），会话使用 HttpOnly Cookie
+- element-plus-message 统一消息弹窗（提示、确认框、通知）
 - Vue 3、TypeScript、Vite、Vue Router、Pinia
 - shadcn-vue `nova` 风格、Tailwind CSS v4、响应式示例页面
 - 开发多阶段 Docker 镜像；生产阶段将前端构建产物内嵌进 API 二进制，单一镜像部署
@@ -76,6 +78,7 @@ make down
 │   │       ├── postgres/
 │   │       └── mysql/
 │   ├── health/                 # live / ready 探针
+│   ├── sso/                    # OAuth2/OIDC 登录、会话、users 存储
 │   ├── tasks/                  # 示例业务：模型、存储、HTTP、测试
 │   ├── webassets/               # 生产构建时内嵌 web/dist 的前端资源（go:embed）
 │   └── Dockerfile               # development 阶段仅供 make dev 用；production 阶段先构建 web 再嵌入
@@ -110,6 +113,48 @@ make down
 | `POST`   | `/api/v1/tasks`      | 创建任务，Body: `{"title":"..."}`    |
 | `PATCH`  | `/api/v1/tasks/{id}` | 更新状态，Body: `{"completed":true}` |
 | `DELETE` | `/api/v1/tasks/{id}` | 删除任务                             |
+| `GET`    | `/api/v1/auth/sso/login`    | 跳转到 SSO 授权页（浏览器访问） |
+| `GET`    | `/api/v1/auth/sso/callback` | SSO 回调，成功后写入会话 Cookie |
+| `GET`    | `/api/v1/auth/session`      | 当前登录用户，未登录返回 401     |
+| `POST`   | `/api/v1/auth/logout`       | 清除本站会话，并返回 SSO 登出地址 |
+
+## 单点登录（Glosc AI SSO）
+
+前端只做跳转，`client_secret` 与 SSO 令牌全部留在服务端：浏览器访问 `/api/v1/auth/sso/login` → SSO 授权页 → 回调带回一次性 `code` → 服务端换取令牌并读取 UserInfo → 以 `sub` 为主键写入本地 `users` 表 → 签发本站自己的会话 JWT，放进 HttpOnly Cookie。
+
+1. 在 <https://sso.gloscai.com/dashboard/clients> 创建客户端，启用 `authorization_code`。
+2. 回调地址必须与白名单逐字一致（协议、域名、端口、路径）：
+   - 开发：`http://localhost:5173/api/v1/auth/sso/callback`（浏览器访问 5173，Vite 代理到 API）
+   - 生产：`https://<你的域名>/api/v1/auth/sso/callback`
+3. 在 `.env` 填入配置后重启：
+
+```env
+SSO_CLIENT_ID=<客户端 ID>
+SSO_CLIENT_SECRET=<客户端密钥>
+SSO_REDIRECT_URL=http://localhost:5173/api/v1/auth/sso/callback
+SESSION_COOKIE_SECURE=false   # 仅 HTTPS 下改为 true，生产默认 true
+```
+
+访问 <http://localhost:5173/login> 登录，成功后跳转 `/profile`。
+
+留空 `SSO_CLIENT_ID` 即关闭登录：`/api/v1/auth/session` 仍返回 401，登录接口返回 `sso_disabled`，模板其余部分照常运行。端点地址来自 SSO 的 Discovery 文档（`SSO_ISSUER` + `/api/.well-known/openid-configuration`），首次使用时读取并缓存 15 分钟，因此 SSO 暂时不可用不会阻塞 API 启动。
+
+安全要点：`state` 与 PKCE `code_verifier` 存在 Redis 中且只能消费一次（`GETDEL`），登录回调的 `redirect_to` 只接受站内绝对路径，防止开放重定向。
+
+## 消息弹窗
+
+`web/src/lib/message.ts` 是统一入口，封装 [element-plus-message](https://github.com/3DMXM/element-plus-message)（Element Plus 中裁剪出的 `ElMessage` / `ElMessageBox` / `ElNotification`）：
+
+```ts
+import { confirmAction, notifyError, notifySuccess } from '@/lib/message'
+
+notifySuccess('任务已创建')
+if (await confirmAction('确定删除吗？', '删除任务', { danger: true })) {
+  // 用户已确认
+}
+```
+
+业务代码只依赖这个模块，不直接 import 该库，方便日后整体替换弹窗实现。
 
 ## 数据库与迁移
 
