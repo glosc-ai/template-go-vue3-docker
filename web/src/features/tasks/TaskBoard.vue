@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { AlertCircleIcon, ListChecksIcon, PlusIcon, Trash2Icon } from '@lucide/vue'
+import { APIError } from '@/api/client'
 import type { Task } from '@/api/tasks'
 import { useTaskStore } from './store'
 import { confirmAction, notifyError, notifySuccess } from '@/lib/message'
@@ -36,6 +37,10 @@ const store = useTaskStore()
 const title = ref('')
 const validationError = computed(() => title.value.length > 160 ? '任务标题不能超过 160 个字符。' : '')
 
+function toastMessage(caught: unknown, fallback: string): string {
+  return caught instanceof APIError ? caught.message : fallback
+}
+
 async function submit() {
   const trimmed = title.value.trim()
   if (!trimmed) {
@@ -50,8 +55,8 @@ async function submit() {
     title.value = ''
     notifySuccess('任务已创建')
   }
-  catch {
-    notifyError('创建失败，请确认 API 与数据库已启动')
+  catch (caught) {
+    notifyError(toastMessage(caught, '创建失败，请确认 API 与数据库已启动'))
   }
 }
 
@@ -59,8 +64,8 @@ async function toggle(task: Task, completed: boolean) {
   try {
     await store.toggle(task, completed)
   }
-  catch {
-    notifyError('更新任务失败')
+  catch (caught) {
+    notifyError(toastMessage(caught, '更新任务失败'))
   }
 }
 
@@ -77,8 +82,8 @@ async function remove(task: Task) {
     await store.remove(task)
     notifySuccess('任务已删除')
   }
-  catch {
-    notifyError('删除任务失败')
+  catch (caught) {
+    notifyError(toastMessage(caught, '删除任务失败'))
   }
 }
 

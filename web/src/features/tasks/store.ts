@@ -14,18 +14,33 @@ export const useTaskStore = defineStore('tasks', () => {
   const error = ref('')
   const completedCount = computed(() => items.value.filter(task => task.completed).length)
 
-  async function load() {
+  let inflight: Promise<void> | null = null
+
+  /**
+   * Loads the task list once and shares the promise, so several components
+   * mounting together do not each hit the API.
+   */
+  async function load(): Promise<void> {
+    if (inflight) {
+      return inflight
+    }
+
     loading.value = true
     error.value = ''
-    try {
-      items.value = await listTasks()
-    }
-    catch (caught) {
-      error.value = errorMessage(caught)
-    }
-    finally {
-      loading.value = false
-    }
+    inflight = (async () => {
+      try {
+        items.value = await listTasks()
+      }
+      catch (caught) {
+        error.value = errorMessage(caught)
+      }
+      finally {
+        loading.value = false
+        inflight = null
+      }
+    })()
+
+    return inflight
   }
 
   async function add(title: string) {

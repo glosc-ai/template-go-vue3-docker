@@ -26,4 +26,6 @@ FROM gcr.io/distroless/static-debian12:nonroot AS production
 COPY --from=build /out/api /api
 ENV HTTP_ADDR=:8080
 EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+  CMD ["/api", "-healthcheck"]
 ENTRYPOINT ["/api"]

@@ -47,7 +47,10 @@ services:
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      JWT_SECRET: ${JWT_SECRET:-replace-this-development-secret-before-production}
+      # No fallback here on purpose: production must set a real JWT_SECRET in
+      # .env. An empty value makes the Go config loader's length check fail
+      # startup instead of silently signing sessions with a known secret.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env before running the production compose}
       JWT_ISSUER: ${JWT_ISSUER:-go-vue-starter}
       JWT_TTL: ${JWT_TTL:-24h}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-}
@@ -64,6 +67,12 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
 
 volumes:
   postgres_data:

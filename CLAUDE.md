@@ -50,7 +50,8 @@ make up/down # 生产形态容器（单一 api 镜像，前端已内嵌，:8080�
 - `state` 与 PKCE verifier 存 Redis，回调用 `GETDEL` 消费，保证一次性；`safeRedirect` 只允许站内绝对路径，改动这两处要连带跑 `sso` 包的测试。
 - 用户以 UserInfo 的 `sub` 为唯一键 upsert 到 `users` 表，JWT subject 存的是本地用户 ID。
 - 未配置 `SSO_CLIENT_ID` 时走 `RegisterDisabled`，登录接口返回 `sso_disabled`，`/api/v1/auth/session` 仍是 401——前端据此区分「未登录」与「未配置」。
-- 需要登录的新接口用 `Handler.RequireUser` 包一层，再用 `sso.UserFrom(ctx)` 取用户。
+- 登出（`/api/v1/auth/logout`）只清本站会话 Cookie，不吊销已签发的 JWT——会话是无状态的（仅验证签名与过期时间），已复制出去的 token 在 `JWT_TTL` 到期前仍然有效。这个 TTL 是唯一的暴露窗口控制手段，如需真正的单点撤销要在服务端加黑名单（如存 Redis）。
+- 需要登录的新接口用 `Handler.RequireUser` 包一层，再用 `sso.UserFrom(ctx)` 取用户；参考实现见 `server.go` 里的 `GET /api/v1/auth/whoami`。
 
 ### 前端（`web/src/`）
 

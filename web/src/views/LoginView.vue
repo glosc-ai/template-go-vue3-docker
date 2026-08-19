@@ -33,7 +33,12 @@ const failureReasons: Record<string, string> = {
 
 const redirectTo = computed(() => {
   const target = route.query.redirect_to
-  return typeof target === 'string' && target.startsWith('/') ? target : '/profile'
+  // Require a same-site root-relative path. `startsWith('/')` alone also
+  // accepts `//evil.com/...`, a protocol-relative URL that browsers resolve
+  // against a different origin — reject that case explicitly to match the
+  // strictness of the backend's sso.safeRedirect.
+  const isSameSitePath = typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+  return isSameSitePath ? target : '/profile'
 })
 
 const failure = computed(() => {

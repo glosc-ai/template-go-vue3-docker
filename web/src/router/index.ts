@@ -2,6 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/features/auth/store'
 import { notifyWarning } from '@/lib/message'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Route requires a signed-in session; see the beforeEach guard below. */
+    requiresAuth?: boolean
+  }
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [

@@ -40,7 +40,19 @@ type JWT struct {
 	Secret string
 	Issuer string
 	TTL    time.Duration
+	// UsingDefaultSecret is true when no JWT_SECRET was supplied and the
+	// well-known development fallback below is in effect. The caller should
+	// log this loudly: it means any deployment that forgets to set APP_ENV
+	// to "production" will silently sign sessions with a secret anyone can
+	// read from this source file.
+	UsingDefaultSecret bool
 }
+
+// developmentJWTSecret is committed to the repo and must never be used
+// outside local development. Production startup already refuses an empty
+// JWT_SECRET (see Load), but this constant is kept separate and named so
+// UsingDefaultSecret can be detected without string-comparing a literal.
+const developmentJWTSecret = "development-only-secret-change-before-release"
 
 // SSO configures the OAuth 2.0 / OIDC relying party. Enabled is false when no
 // client ID is set, which keeps the template runnable without SSO credentials.
@@ -71,8 +83,10 @@ func Load() (Config, error) {
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
+	usingDefaultSecret := false
 	if jwtSecret == "" && environment != "production" {
-		jwtSecret = "development-only-secret-change-before-release"
+		jwtSecret = developmentJWTSecret
+		usingDefaultSecret = true
 	}
 	if len(jwtSecret) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET must contain at least 32 characters")
@@ -130,9 +144,10 @@ func Load() (Config, error) {
 			DB:       redisDB,
 		},
 		JWT: JWT{
-			Secret: jwtSecret,
-			Issuer: cmp.Or(os.Getenv("JWT_ISSUER"), "go-vue-starter"),
-			TTL:    jwtTTL,
+			Secret:             jwtSecret,
+			Issuer:             cmp.Or(os.Getenv("JWT_ISSUER"), "go-vue-starter"),
+			TTL:                jwtTTL,
+			UsingDefaultSecret: usingDefaultSecret,
 		},
 		SSO: sso,
 	}, nil

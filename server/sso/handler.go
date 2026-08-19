@@ -182,8 +182,14 @@ func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": user})
 }
 
-// logout clears the local session. The SSO session itself is left alone unless
-// the frontend follows up with sso_logout_url.
+// logout clears the local session cookie. The SSO session itself is left
+// alone unless the frontend follows up with sso_logout_url.
+//
+// This does not revoke the JWT: sessions are stateless (auth.Manager only
+// verifies the signature and expiry), so a token issued before logout stays
+// valid for up to JWT_TTL if it was copied out of the cookie. Keep JWT_TTL
+// short if that exposure matters for your deployment; revoking individual
+// tokens would need a server-side blocklist (e.g. in Redis).
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	auth.ClearSession(w, h.secureCookies)
 	writeJSON(w, http.StatusOK, map[string]any{

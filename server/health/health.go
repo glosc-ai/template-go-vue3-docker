@@ -1,12 +1,16 @@
 package health
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
+
+const pingTimeout = 3 * time.Second
 
 type Handler struct {
 	db    *sql.DB
@@ -27,13 +31,16 @@ func (h *Handler) live(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), pingTimeout)
+	defer cancel()
+
 	checks := map[string]string{"database": "ok", "redis": "ok"}
 	status := http.StatusOK
-	if err := h.db.PingContext(r.Context()); err != nil {
+	if err := h.db.PingContext(ctx); err != nil {
 		checks["database"] = "unavailable"
 		status = http.StatusServiceUnavailable
 	}
-	if err := h.cache.Ping(r.Context()).Err(); err != nil {
+	if err := h.cache.Ping(ctx).Err(); err != nil {
 		checks["redis"] = "unavailable"
 		status = http.StatusServiceUnavailable
 	}

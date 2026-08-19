@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,18 @@ import (
 	"github.com/gloscai/template-go-vue3-docker/server/webassets"
 )
 
+// whoami is a minimal reference for authenticated endpoints: it exists to
+// show how to consume RequireUser + sso.UserFrom, not as a real feature.
+func whoami(w http.ResponseWriter, r *http.Request) {
+	user, ok := sso.UserFrom(r.Context())
+	if !ok {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": user})
+}
+
 func run(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -26,6 +39,9 @@ func run(ctx context.Context) error {
 	}
 
 	logger := newLogger(cfg.LogLevel)
+	if cfg.JWT.UsingDefaultSecret {
+		logger.Warn("JWT_SECRET is not set; signing sessions with the well-known development default. Set JWT_SECRET before exposing this server beyond localhost.")
+	}
 	db, err := database.Open(ctx, cfg.Database)
 	if err != nil {
 		return err
@@ -53,7 +69,7 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("building session manager: %w", err)
 		}
-		sso.NewHandler(sso.Options{
+		ssoHandler := sso.NewHandler(sso.Options{
 			Provider: sso.NewProvider(
 				cfg.SSO.DiscoveryURL,
 				cfg.SSO.ClientID,
@@ -68,7 +84,12 @@ func run(ctx context.Context) error {
 			SessionTTL:      cfg.JWT.TTL,
 			SecureCookies:   cfg.SSO.SecureCookies,
 			DefaultRedirect: cfg.SSO.PostLoginPath,
-		}).Register(mux)
+		})
+		ssoHandler.Register(mux)
+		// Reference example for new authenticated endpoints: wrap the handler
+		// with RequireUser and read the caller via sso.UserFrom(ctx). Copy this
+		// pattern in other packages rather than reimplementing session checks.
+		mux.Handle("GET /api/v1/auth/whoami", ssoHandler.RequireUser(http.HandlerFunc(whoami)))
 		logger.Info("SSO login enabled", "discovery", cfg.SSO.DiscoveryURL, "redirect", cfg.SSO.RedirectURL)
 	} else {
 		logger.Info("SSO login disabled; set SSO_CLIENT_ID to enable it")
